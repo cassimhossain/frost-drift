@@ -8,7 +8,7 @@ import { LEVELS, RUN_SECONDS } from './levels.js';
 import { loadAssets } from './assets.js';
 import { Player } from './player.js';
 import { World } from './world.js';
-import { UI, Input } from './ui.js';
+import { UI, Input, Store } from './ui.js';
 import { Effects } from './effects.js';
 
 // Computers get the full picture; phones and tablets get a lighter one. ?quality=high|low forces a tier.
@@ -27,6 +27,7 @@ renderer.toneMappingExposure = 0.95;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 600);
 const input = new Input();
+const store = new Store();
 const ui = new UI({ onStart: start, onAgain: () => start(mode), onMenu: menu, onCar: pickCar, onView: nextView, onFinish: finish });
 
 let composer = null;
@@ -95,7 +96,7 @@ function menu() {
   world.setTime(MENU_DUSK);
   player.setNight(world.night);
   ui.setCar(car);
-  ui.showStart();
+  ui.showStart(store.best);
 }
 
 function start(nextMode) {
@@ -105,6 +106,7 @@ function start(nextMode) {
   ui.showHud(mode);
   ui.setScore(score);
   ui.setLevel(0, level.name);
+  if (mode === 'run') ui.setTime(RUN_SECONDS);
   ui.setView(CONFIG.views[view].name);
   ui.banner(mode === 'run' ? 'Level 1' : 'Free drive', level.name);
 }
@@ -113,7 +115,9 @@ function finish() {
   if (state !== 'playing') return;
   state = 'over';
   input.clear();
-  ui.showEnd({ score, mode });
+  // Only a full Timed Run can set the best score.
+  const isBest = mode === 'run' && store.submit(score);
+  ui.showEnd({ score, mode, best: store.best, isBest });
 }
 
 function pickCar(i) {
@@ -210,8 +214,8 @@ requestAnimationFrame(frame);
 
 // Debug handle for the console and for automated checks.
 window.__game = {
-  player, world, input, camera, renderer, scene, tier, effects,
-  tick(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); draw(); },
+  player, world, input, camera, renderer, scene, tier, effects, store,
+  tick(n = 1, dt = 1 / 60, each) { for (let i = 0; i < n; i++) { if (each) each(); step(dt); } draw(); },
   get state() { return state; },
   get score() { return score; },
   get elapsed() { return elapsed; },

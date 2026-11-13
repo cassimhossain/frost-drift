@@ -19,7 +19,7 @@ export class Input {
 
     const side = (e) => (e.clientX < window.innerWidth / 2 ? -1 : 1);
     window.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' || e.target.closest('button, textarea')) return;
+      if (e.pointerType === 'mouse' || (e.target.closest && e.target.closest('button, textarea'))) return;
       this.touches.set(e.pointerId, side(e));
     });
     window.addEventListener('pointermove', (e) => {
@@ -40,6 +40,30 @@ export class Input {
     let s = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
     for (const v of this.touches.values()) s += v;
     return Math.max(-1, Math.min(1, s));
+  }
+}
+
+// Best score, saved in the browser. If storage is blocked (private mode, embedded frames) the score
+// is kept in memory instead, so the game still works; it just will not survive a reload.
+export class Store {
+  constructor() {
+    this.memory = 0;
+  }
+
+  get best() {
+    try {
+      const v = parseInt(window.localStorage.getItem(CONFIG.storageKey), 10);
+      if (Number.isFinite(v)) return Math.max(v, this.memory);
+    } catch (err) { /* storage blocked: fall back to memory */ }
+    return this.memory;
+  }
+
+  // Returns true when the score is a new best.
+  submit(score) {
+    if (score <= this.best) return false;
+    this.memory = score;
+    try { window.localStorage.setItem(CONFIG.storageKey, String(score)); } catch (err) { /* keep it in memory */ }
+    return true;
   }
 }
 
@@ -91,6 +115,7 @@ export class UI {
     $('menu').addEventListener('click', () => this.h.onMenu());
     $('view').addEventListener('click', () => this.h.onView());
     $('finish').addEventListener('click', () => this.h.onFinish());
+    $('share').addEventListener('click', () => this.share());
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       if (e.key === 'c' || e.key === 'C') this.h.onView();
@@ -112,7 +137,10 @@ export class UI {
   setLoading(p) { $('bar').firstElementChild.style.width = Math.round(p * 100) + '%'; }
   loadFailed() { $('loadText').textContent = 'Could not load the game files. Check your connection and reload.'; }
 
-  showStart() { this.show('start'); }
+  showStart(best) {
+    this.show('start');
+    $('best').textContent = best > 0 ? `Best score ${best}` : 'No best score yet';
+  }
   setCar(i) { this.carButtons.forEach((b, k) => b.setAttribute('aria-pressed', String(k === i))); }
 
   showHud(mode) {
@@ -145,11 +173,30 @@ export class UI {
     this.bannerTimer = setTimeout(() => el.classList.remove('on'), 2200);
   }
 
-  showEnd({ score, mode }) {
+  showEnd({ score, mode, best, isBest }) {
     this.show('end');
-    $('endLabel').textContent = mode === 'run' ? 'Run complete' : 'Free drive';
+    this.shareText = `I scored ${score} in ${CONFIG.name} ${CONFIG.shareUrl}`;
+    $('endLabel').textContent = mode === 'run' ? (isBest ? 'New best score' : 'Run complete') : 'Free drive';
     $('endScore').textContent = score;
     const n = score / CONFIG.collectible.points;
-    $('endText').textContent = `You collected ${n} ${n === 1 ? CONFIG.collectible.name : CONFIG.collectible.plural}.`;
+    const what = `You collected ${n} ${n === 1 ? CONFIG.collectible.name : CONFIG.collectible.plural}.`;
+    $('endText').textContent = mode === 'run' ? `${what} Best: ${best}.` : `${what} Free Drive scores are not saved.`;
+    $('shareNote').textContent = '';
+    $('shareBox').hidden = true;
+  }
+
+  // Copies the share text. If the browser blocks copying, shows the text so it can be copied by hand.
+  async share() {
+    try {
+      await navigator.clipboard.writeText(this.shareText);
+      $('shareNote').textContent = 'Copied. Paste it anywhere.';
+    } catch (err) {
+      const box = $('shareBox');
+      box.hidden = false;
+      box.value = this.shareText;
+      box.focus();
+      box.select();
+      $('shareNote').textContent = 'Copying is blocked here. Select the text and copy it yourself.';
+    }
   }
 }

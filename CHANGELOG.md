@@ -2,6 +2,11 @@
 
 Newest first.
 
+## 0.5.0 - Share and saved score
+
+- Best Timed Run score is saved in the browser and shown on the start and end screens. If storage is blocked it is kept in memory for the session.
+- Share button copies "I scored [score] in Frost Drift" plus the game link. If copying is blocked, the text is shown in a box to copy by hand.
+
 ## 0.4.0 - Levels, modes and screens
 
 - Loading screen with a progress bar; start screen with the name in big letters over the live scene.
