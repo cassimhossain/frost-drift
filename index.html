@@ -35,6 +35,10 @@
     text-shadow: 0 2px 14px rgba(0, 0, 0, .7); text-align: right;
   }
   #speed small { display: block; font-size: 12px; font-style: normal; letter-spacing: .2em; color: var(--ice); }
+  #brake {
+    position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 84px; height: 84px;
+    padding: 0; font-size: 14px; letter-spacing: .06em;
+  }
   #banner {
     position: fixed; left: 0; right: 0; top: 22%; text-align: center; pointer-events: none; opacity: 0;
     font-weight: 800; font-style: italic; font-size: clamp(24px, 5vw, 46px); letter-spacing: .04em;
@@ -106,6 +110,7 @@
   <button class="ghost small" id="finish" hidden>Finish</button>
 </div>
 <div id="speed" hidden><span id="kmh">0</span><small>KM/H</small></div>
+<button class="ghost" id="brake" hidden>Brake</button>
 <div id="banner"></div>
 
 <section class="screen" id="loading">

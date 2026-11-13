@@ -28,7 +28,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 600);
 const input = new Input();
 const store = new Store();
-const ui = new UI({ onStart: start, onAgain: () => start(mode), onMenu: menu, onCar: pickCar, onView: nextView, onFinish: finish });
+const ui = new UI({ input, onStart: start, onAgain: () => start(mode), onMenu: menu, onCar: pickCar, onView: nextView, onFinish: finish });
 
 let composer = null;
 if (tier.bloom) {
@@ -66,6 +66,7 @@ const FREE_DAY = 240;        // seconds for Free Drive to go dusk -> night -> du
 const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 const rig = { ...CONFIG.views[0] }; // the view currently in use, eased toward the chosen one
+let camHeading = 0;                 // direction the chase camera faces
 
 let state = 'menu';          // 'menu' | 'playing' | 'over'
 let mode = 'run';            // 'run' (timed, 3 levels) | 'free' (no timer, no saved score)
@@ -86,6 +87,7 @@ function resetRun() {
   world.reset(level);
   effects.reset();
   Object.assign(rig, CONFIG.views[view]);
+  camHeading = 0;
   camPos.set(0, rig.up, rig.back);
   camLook.set(0, rig.lookUp, -rig.ahead);
 }
@@ -131,6 +133,9 @@ function nextView() {
   ui.setView(CONFIG.views[view].name);
 }
 
+const drive = { steer: 0, throttle: 0 };
+const roadInfo = { centre: 0, reach: 0, tangent: 0, offroad: false };
+
 function play(dt) {
   elapsed += dt;
   if (mode === 'run' && elapsed >= RUN_SECONDS) { finish(); return; }
@@ -146,32 +151,45 @@ function play(dt) {
   world.setTime(mode === 'run' ? elapsed / RUN_SECONDS : 0.5 - 0.5 * Math.cos((elapsed / FREE_DAY) * Math.PI * 2));
   player.setNight(world.night);
 
-  const centre = world.roadX(player.z);
-  const offroad = Math.abs(player.x - centre) > world.roadHalf;
-  player.update(dt, input.steer, level, offroad, centre, world.roadHalf + world.edge);
+  // On the road modes the car pulls away by itself, so steering alone is enough to play.
+  // The gas and brake pedals override that whenever they are pressed.
+  drive.steer = input.steer;
+  drive.throttle = input.throttle || 1;
+  roadInfo.centre = world.roadX(player.z);
+  roadInfo.reach = world.roadHalf + world.edge;
+  roadInfo.tangent = world.roadHeading(player.z);
+  roadInfo.offroad = Math.abs(player.x - roadInfo.centre) > world.roadHalf;
+  player.update(dt, drive, level, roadInfo);
 
   const r = world.collide(player);
   if (r.hit) { player.hit(); effects.hit(); }
-  for (let i = 0; i < r.count; i++) effects.burst(r.picked[i], player.speed);
+  for (let i = 0; i < r.count; i++) effects.burst(r.picked[i], player.velX, player.velZ);
   effects.kick(player, dt);
   if (r.count) score += r.count * CONFIG.collectible.points;
 
   ui.setScore(score);
-  ui.setSpeed(player.speed * 3.6);
+  ui.setSpeed(Math.abs(player.speed) * 3.6);
   if (mode === 'run') ui.setTime(RUN_SECONDS - elapsed);
+  chase(dt, 0.45);
+}
 
-  // Camera follows with a slight delay sideways, pulls back and widens as speed builds.
+// Chase camera. It swings round behind the car with a slight delay, pulls back and widens as speed builds.
+// follow: how much of the car's turn the camera copies (1 = stays right behind it).
+function chase(dt, follow) {
   const target = CONFIG.views[view], ease = 1 - Math.exp(-dt * 5);
   for (const k of ['back', 'up', 'ahead', 'lookUp', 'lag']) rig[k] += (target[k] - rig[k]) * ease;
-  const pace = player.speed / TOP_SPEED;
-  const tall = camera.aspect < 1 && rig.back > 0 ? 1.3 : 1; // step back on portrait phones
-  const k = 1 - Math.exp(-dt * rig.lag);
-  camPos.x += (player.x - player.vx * 0.12 - camPos.x) * k;
+  const onCar = rig.back < 0.5; // bonnet view rides with the car
+  let turn = player.heading * (onCar ? 1 : follow) - camHeading;
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+  camHeading += turn * (1 - Math.exp(-dt * rig.lag));
+  const sin = Math.sin(camHeading), cos = Math.cos(camHeading);
+  const pace = Math.min(1, Math.abs(player.speed) / TOP_SPEED);
+  const tall = camera.aspect < 1 && !onCar ? 1.3 : 1; // step back on portrait phones
+  const back = rig.back * tall + (onCar ? 0 : pace * 1.6);
   camPos.y += (rig.up * tall + pace * 0.4 - camPos.y) * (1 - Math.exp(-dt * 6));
-  camPos.z = player.z + rig.back * tall + (rig.back > 0 ? pace * 1.6 : 0);
-  camLook.x += (player.x + player.vx * 0.3 - camLook.x) * (1 - Math.exp(-dt * Math.max(6, rig.lag)));
-  camLook.y = rig.lookUp;
-  camLook.z = player.z - rig.ahead;
+  camPos.x = player.x - sin * back;
+  camPos.z = player.z + cos * back;
+  camLook.set(player.x + sin * rig.ahead, rig.lookUp, player.z - cos * rig.ahead);
   camera.position.copy(camPos).add(effects.offset);
   camera.lookAt(camLook);
   setFov((camera.aspect < 1 ? 72 : 56) + pace * 9);

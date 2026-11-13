@@ -40,19 +40,25 @@ export class Effects {
     this.reset();
   }
 
-  // Call every frame while driving. Faster car, more snow.
+  // Call every frame while driving. Faster car, more snow; a sliding car throws up extra.
   kick(player, dt) {
-    if (player.speed < 6) return;
-    const count = player.speed * dt * 2.2 + (Math.abs(player.vx) > 6 ? 1 : 0);
+    const v = Math.abs(player.speed);
+    if (v < 6) return;
+    const sin = Math.sin(player.heading), cos = Math.cos(player.heading);
+    const slide = Math.abs(player.velX * cos + player.velZ * sin);
+    const count = v * dt * 2.2 + slide * dt * 3;
     for (let k = Math.random() < count % 1 ? Math.ceil(count) : Math.floor(count); k > 0; k--) {
       const i = this.sprayNext, s = this.spray[i], side = Math.random() < 0.5 ? -1 : 1;
       this.sprayNext = (i + 1) % this.spray.length;
-      this.sprayPos[i * 3] = player.x + side * 0.95 + (Math.random() - 0.5) * 0.3;
+      // Rear wheels: 1.7 m behind the centre, 0.95 m either side.
+      const off = side * 0.95 + (Math.random() - 0.5) * 0.3;
+      this.sprayPos[i * 3] = player.x - sin * 1.7 + cos * off;
       this.sprayPos[i * 3 + 1] = 0.15;
-      this.sprayPos[i * 3 + 2] = player.z + 1.7;
-      s.vx = side * (0.6 + Math.random() * 1.6) - player.vx * 0.15;
+      this.sprayPos[i * 3 + 2] = player.z + cos * 1.7 + sin * off;
+      const out = side * (0.6 + Math.random() * 1.6);
+      s.vx = player.velX * 0.35 + cos * out;
       s.vy = 0.6 + Math.random() * 1.6;
-      s.vz = -player.speed * 0.35;
+      s.vz = player.velZ * 0.35 + sin * out;
       s.life = 0.35 + Math.random() * 0.35;
     }
   }
@@ -67,14 +73,14 @@ export class Effects {
     this.write();
   }
 
-  // Burst of sparks at a world position. forward: the car's speed, so sparks travel with it.
-  burst(pos, forward = 0, n = 12) {
+  // Burst of sparks at a world position. velX/velZ: the car's velocity, so sparks travel with it.
+  burst(pos, velX = 0, velZ = 0, n = 12) {
     for (let i = 0; i < n; i++) {
       const s = this.sparks[this.next];
       this.next = (this.next + 1) % this.sparks.length;
       const a = Math.random() * Math.PI * 2, up = 3 + Math.random() * 5, out = 2 + Math.random() * 4;
       s.x = pos.x; s.y = pos.y; s.z = pos.z;
-      s.vx = Math.cos(a) * out; s.vy = up; s.vz = Math.sin(a) * out - forward * 0.85;
+      s.vx = Math.cos(a) * out + velX * 0.85; s.vy = up; s.vz = Math.sin(a) * out + velZ * 0.85;
       s.life = 0.45 + Math.random() * 0.35;
       s.spin = Math.random() * 6;
     }

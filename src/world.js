@@ -57,6 +57,11 @@ export class World {
     return amp * (Math.sin(z * 0.014) + 0.5 * Math.sin(z * 0.031 + 1.3));
   }
 
+  // Direction the road points at depth z, as a heading: 0 is straight ahead, positive bends right.
+  roadHeading(z) {
+    return Math.atan(-this.roadSlope(z));
+  }
+
   roadSlope(z) {
     return (this.roadX(z - 1) - this.roadX(z + 1)) / -2;
   }

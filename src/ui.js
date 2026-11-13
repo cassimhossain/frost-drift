@@ -2,16 +2,24 @@ import { CONFIG } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Controls: arrow keys (or A/D) on a computer, tap or hold the left/right half of the screen on a phone.
+// Controls.
+// Computer: left/right arrows steer (A/D too); up/down arrows are gas and brake/reverse (W/S too).
+// Phone: tap or hold the left or right half of the screen to steer; hold the Brake button to slow, then reverse.
 export class Input {
   constructor() {
-    this.keys = { left: false, right: false };
+    this.keys = { left: false, right: false, up: false, down: false };
     this.touches = new Map(); // pointerId -> -1 | 1
+    this.pedals = new Map();  // pointerId -> -1 (brake) | 1 (gas)
+    this.touch = window.matchMedia('(pointer: coarse)').matches;
 
+    const names = {
+      ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
+      ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down',
+    };
     const key = (e, down) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') this.keys.left = down;
-      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') this.keys.right = down;
-      else return;
+      const k = names[e.key];
+      if (!k) return;
+      this.keys[k] = down;
       e.preventDefault();
     };
     window.addEventListener('keydown', (e) => key(e, true));
@@ -25,15 +33,29 @@ export class Input {
     window.addEventListener('pointermove', (e) => {
       if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, side(e));
     });
-    const end = (e) => this.touches.delete(e.pointerId);
+    const end = (e) => { this.touches.delete(e.pointerId); this.pedals.delete(e.pointerId); };
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
     window.addEventListener('blur', () => this.clear());
   }
 
+  // Makes an on-screen button act as a pedal while it is held. value: 1 for gas, -1 for brake/reverse.
+  pedal(el, value) {
+    el.addEventListener('pointerdown', (e) => { this.pedals.set(e.pointerId, value); e.preventDefault(); });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
   clear() {
-    this.keys.left = this.keys.right = false;
+    this.keys.left = this.keys.right = this.keys.up = this.keys.down = false;
     this.touches.clear();
+    this.pedals.clear();
+  }
+
+  // -1 (brake, then reverse) .. 1 (gas). 0 means no pedal is pressed.
+  get throttle() {
+    let t = (this.keys.up ? 1 : 0) - (this.keys.down ? 1 : 0);
+    for (const v of this.pedals.values()) t += v;
+    return Math.max(-1, Math.min(1, t));
   }
 
   get steer() {
@@ -95,7 +117,11 @@ export class UI {
     }
     $('tagline').textContent = CONFIG.tagline;
     const touch = window.matchMedia('(pointer: coarse)').matches;
-    $('hint').textContent = `${touch ? 'Hold the left or right side of the screen to steer.' : 'Steer with the left and right arrow keys. C changes the view.'} Collect ${CONFIG.collectible.plural}, stay off the trees and rocks.`;
+    $('hint').textContent = `${touch
+      ? 'Hold the left or right side of the screen to steer. Hold Brake to slow down and reverse.'
+      : 'Arrow keys: left and right steer, down brakes and reverses, up is gas. C changes the view.'} Collect ${CONFIG.collectible.plural}, stay off the trees and rocks.`;
+    this.touch = touch;
+    handlers.input.pedal($('brake'), -1);
 
     // Car picker.
     this.carButtons = CONFIG.cars.map((car, i) => {
@@ -131,6 +157,7 @@ export class UI {
     const playing = id === 'hud';
     $('hud').hidden = !playing;
     $('speed').hidden = !playing;
+    $('brake').hidden = !(playing && this.touch);
     if (!playing) $('banner').classList.remove('on');
   }
 

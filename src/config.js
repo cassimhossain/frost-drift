@@ -43,6 +43,18 @@ export const CONFIG = {
     { name: 'Concept GT Graphite', model: 'concept', variant: 2, swatch: '#3b3f46' },
   ],
 
+  // How the car handles. Speeds in m/s, rates per second.
+  driving: {
+    maxSpeed: 46, accel: 11,          // open-world top speed and pull (road modes take theirs from levels.js)
+    brake: 26, reverseSpeed: 11, reverseAccel: 9, coast: 1.4,
+    wheelTurn: 5, wheelReturn: 7,     // how fast the steering wheel follows the input / springs back
+    yawSlow: 2.1, yawFast: 0.95,      // turn rate at full lock when slow / at 40 m/s
+    turnSpeed: 5,                     // below this speed the car turns less
+    gripRoad: 7, gripSnow: 2.6,       // higher = less sliding
+    roadSwing: 0.6, roadAlign: 5.5,   // road modes: how far the wheel swings the car off the road line, and how fast
+    backUp: 16,                       // road modes: metres the car may reverse
+  },
+
   // Camera views, cycled with the View button or the C key. Distances are in metres from the car.
   views: [
     { name: 'Chase', back: 7.2, up: 2.7, ahead: 7, lookUp: 1.1, lag: 4 },

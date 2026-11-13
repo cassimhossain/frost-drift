@@ -27,9 +27,11 @@ These rules must never be broken. If a request conflicts with one, say so and as
 
 ## Controls
 
-- Computer: left and right arrow keys.
-- Phone: tap or hold the left or right half of the screen.
+- Computer: left and right arrow keys steer; up is gas, down is brake then reverse. C changes the view, M mutes.
+- Phone: tap or hold the left or right half of the screen to steer; hold the on-screen Brake button to slow, then reverse.
+- Steering alone must always be enough to play: with no pedal pressed the car pulls away by itself (road modes always; open world on phones).
 - Both must always work. Never add a feature that needs a control one of them lacks.
+- Handling numbers live in `CONFIG.driving`.
 
 ## Game rules
 

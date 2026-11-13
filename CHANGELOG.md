@@ -2,6 +2,13 @@
 
 Newest first.
 
+## 0.6.0 - Real driving
+
+- New car handling: the steering wheel eases in and springs back, the car turns its nose into corners, slides a little on snow, leans, squats and dives.
+- Gas, brake and reverse: up/down arrows (W/S) on a computer, a Brake button on phones. With no pedal pressed the car still pulls away by itself, so steering alone is enough.
+- Chase camera swings round behind the car. Handling numbers are in `CONFIG.driving`.
+- Controls rule in `CLAUDE.md` updated to allow the new pedals.
+
 ## 0.5.0 - Share and saved score
 
 - Best Timed Run score is saved in the browser and shown on the start and end screens. If storage is blocked it is kept in memory for the session.

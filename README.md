@@ -11,8 +11,9 @@ Play it: https://cassimhossain.github.io/frost-drift/
 
 ## Controls
 
-- Computer: left and right arrow keys (A and D also work). C changes the camera view. Enter starts a run.
-- Phone: tap or hold the left or right half of the screen. The View button changes the camera.
+- Computer: left and right arrow keys steer (A and D also work). Up is gas, down is brake then reverse (W and S). C changes the camera view. Enter starts a run.
+- Phone: tap or hold the left or right half of the screen to steer. Hold Brake to slow down and reverse. The View button changes the camera.
+- The car pulls away by itself, so steering alone is enough to play.
 
 ## Run it locally
 

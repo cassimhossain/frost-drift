@@ -40,8 +40,9 @@ export class Player {
     this.spin = 0;
     this.night = 0;
     this.braking = false;
-    this.x = 0; this.z = 0; this.speed = 0; this.vx = 0; this.stun = 0;
+    this.x = 0; this.z = 0; this.heading = 0; this.wheel = 0; this.roll = 0; this.pitch = 0;
     this.setCar(CONFIG.cars[0]);
+    this.reset();
   }
 
   buildRig(model, def) {
@@ -108,44 +109,109 @@ export class Player {
   }
 
   reset() {
-    this.x = 0; this.z = 0; this.speed = 0; this.vx = 0; this.stun = 0; this.braking = false;
+    this.x = 0; this.z = 0;
+    this.heading = 0;            // radians; 0 points down the road (-z), positive turns right
+    this.speed = 0;              // forward speed along the heading, negative in reverse
+    this.velX = 0; this.velZ = 0; // actual velocity; differs from the heading while the car slides
+    this.wheel = 0;              // steering wheel, -1..1, eased
+    this.yawRate = 0;
+    this.roll = 0; this.pitch = 0;
+    this.stun = 0; this.braking = false;
+    this.furthest = 0;           // road modes: how far down the road the car has been
     this.sync();
   }
 
-  // steer: -1 (left) .. 1 (right). centre: road centre at the car. reach: how far from it the car may stray.
-  update(dt, steer, level, offroad, centre, reach) {
+  get vx() { return this.velX; }
+
+  // drive: { steer, throttle } each -1..1.
+  // tune: { maxSpeed, accel } plus the handling numbers in CONFIG.driving.
+  // road: null in the open world; in road modes { centre, reach, tangent, offroad } keeps the car on its strip.
+  update(dt, drive, tune, road) {
+    const d = CONFIG.driving;
     this.stun = Math.max(0, this.stun - dt);
-    // Speed builds up gradually; off the road or just after a hit the car can only crawl.
-    const max = level.maxSpeed * (offroad ? 0.6 : 1) * (this.stun > 0 ? 0.45 : 1);
-    this.braking = this.stun > 0 || this.speed > max + 0.5;
-    if (this.speed < max) this.speed = Math.min(max, this.speed + level.accel * dt);
-    else this.speed += (max - this.speed) * Math.min(1, dt * 2.5);
-    // Steering eases in and out instead of snapping.
-    const grip = 0.35 + 0.65 * Math.min(1, this.speed / 12);
-    this.vx += (steer * level.steer * grip - this.vx) * Math.min(1, dt * 7);
-    this.x += this.vx * dt;
-    // Deep snow beyond the verge stops the car drifting off into the scenery.
-    const off = this.x - centre;
-    if (Math.abs(off) > reach) { this.x = centre + Math.sign(off) * reach; this.vx *= 0.5; }
-    this.z -= this.speed * dt;
-    this.spin -= (this.speed * dt) / this.rig.radius;
+
+    // Steering wheel eases toward the input instead of snapping, and returns to centre a little faster.
+    const turnRate = drive.steer === 0 ? d.wheelReturn : d.wheelTurn;
+    this.wheel += (drive.steer - this.wheel) * (1 - Math.exp(-dt * turnRate));
+
+    // Split the current velocity into forward and sideways parts.
+    let sin = Math.sin(this.heading), cos = Math.cos(this.heading);
+    let fwd = this.velX * sin - this.velZ * cos;
+    let side = this.velX * cos + this.velZ * sin;
+
+    // Engine, brakes, reverse.
+    const max = tune.maxSpeed * (road && road.offroad ? 0.6 : 1) * (this.stun > 0 ? 0.45 : 1);
+    const before = fwd;
+    if (drive.throttle > 0) {
+      if (fwd < 0) fwd = Math.min(0, fwd + d.brake * dt);
+      else if (fwd < max) fwd = Math.min(max, fwd + tune.accel * drive.throttle * (1 - 0.55 * fwd / max) * dt);
+    } else if (drive.throttle < 0) {
+      if (fwd > 0.4) fwd = Math.max(0, fwd - d.brake * dt);
+      else fwd = Math.max(-d.reverseSpeed, fwd - d.reverseAccel * dt);
+    } else {
+      fwd -= Math.sign(fwd) * Math.min(Math.abs(fwd), (d.coast + 0.012 * fwd * fwd) * dt);
+    }
+    if (fwd > max) fwd += (max - fwd) * Math.min(1, dt * 2.5);
+    this.braking = this.stun > 0 || (drive.throttle < 0 && before > 0.4) || fwd < before - 6 * dt;
+
+    // Turning. The car needs to be rolling to turn, and turns less sharply the faster it goes.
+    const rolling = Math.min(1, Math.abs(fwd) / d.turnSpeed);
+    const lock = d.yawSlow + (d.yawFast - d.yawSlow) * Math.min(1, Math.abs(fwd) / 40);
+    const old = this.heading;
+    if (road) {
+      // On the road modes the car aims along the road and the wheel swings it to either side,
+      // so letting go straightens up on its own.
+      const aim = road.tangent + this.wheel * d.roadSwing * (0.35 + 0.65 * rolling) * Math.sign(fwd || 1);
+      this.heading += (aim - this.heading) * (1 - Math.exp(-dt * d.roadAlign));
+    } else {
+      this.heading += this.wheel * lock * rolling * Math.sign(fwd || 1) * dt;
+    }
+    this.yawRate = (this.heading - old) / Math.max(dt, 1e-4);
+
+    // Tyres pull the sideways slide back to zero: quickly on tarmac, slowly on snow.
+    const grip = road && road.offroad ? d.gripSnow : d.gripRoad;
+    side *= Math.exp(-grip * dt);
+
+    sin = Math.sin(this.heading); cos = Math.cos(this.heading);
+    this.speed = fwd;
+    this.velX = sin * fwd + cos * side;
+    this.velZ = -cos * fwd + sin * side;
+    this.x += this.velX * dt;
+    this.z += this.velZ * dt;
+
+    if (road) {
+      // Deep snow beyond the verge stops the car drifting off into the scenery.
+      const off = this.x - road.centre;
+      if (Math.abs(off) > road.reach) { this.x = road.centre + Math.sign(off) * road.reach; this.velX *= 0.3; }
+      // The road behind is cleared away as the car drives, so it can only back up a short way.
+      this.furthest = Math.min(this.furthest, this.z);
+      if (this.z > this.furthest + d.backUp) { this.z = this.furthest + d.backUp; this.velZ = Math.min(0, this.velZ); }
+    }
+
+    // Body leans out of corners, squats under power and dives under brakes.
+    const ease = 1 - Math.exp(-dt * 6);
+    this.roll += (Math.max(-0.07, Math.min(0.07, this.yawRate * fwd * 0.0016)) - this.roll) * ease;
+    this.pitch += (Math.max(-0.035, Math.min(0.035, (fwd - before) / Math.max(dt, 1e-4) * 0.0022)) - this.stun * 0.045 - this.pitch) * ease;
+    this.spin -= (fwd * dt) / this.rig.radius;
     this.sync();
   }
 
   // A hit slows the car. It never ends the run.
   hit() {
     this.stun = 0.7;
+    this.velX *= 0.45;
+    this.velZ *= 0.45;
     this.speed *= 0.45;
   }
 
   sync() {
     this.group.position.set(this.x, 0, this.z);
-    this.group.rotation.y = -this.vx * 0.016;
-    this.body.rotation.z = this.vx * 0.0035;
-    this.body.rotation.x = -this.stun * 0.045;
+    this.group.rotation.y = -this.heading;
+    this.body.rotation.z = this.roll;
+    this.body.rotation.x = this.pitch;
     for (const w of this.rig.wheels) {
       w.pivot.rotation.x = this.spin;
-      w.pivot.rotation.y = w.front ? -this.vx * 0.022 : 0;
+      w.pivot.rotation.y = w.front ? -this.wheel * 0.42 : 0;
     }
     // Lamps glow harder at night; brake lights flare while the car is slowing.
     for (const m of this.rig.head) m.emissiveIntensity = 1.5 + this.night * 5;
