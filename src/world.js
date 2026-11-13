@@ -7,8 +7,9 @@ const ROAD_HALF = 5;      // half the road width
 const ROAD_SEGS = 64;
 
 // Collision tuning.
-const HIT_SCALE = 1;      // multiplies obstacle hit radius
-const PICK_RADIUS = 1.5;  // canister pickup distance
+// Forgiving on purpose: obstacles are smaller than they look, pickups are bigger.
+const HIT_SCALE = 0.68;   // multiplies obstacle hit radius
+const PICK_RADIUS = 2.3;  // canister pickup distance
 
 const rand = (a, b) => a + Math.random() * (b - a);
 

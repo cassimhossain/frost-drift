@@ -53,17 +53,23 @@ export class Player {
   // steer: -1 (left) .. 1 (right)
   update(dt, steer, level, offroad) {
     this.stun = Math.max(0, this.stun - dt);
-    const max = level.maxSpeed * (offroad ? 0.6 : 1);
-    this.speed = this.stun > 0 ? max * 0.3 : max;
-    this.vx = steer * level.steer;
+    // Speed builds up gradually; off the road or just after a hit the car can only crawl.
+    const max = level.maxSpeed * (offroad ? 0.6 : 1) * (this.stun > 0 ? 0.45 : 1);
+    if (this.speed < max) this.speed = Math.min(max, this.speed + level.accel * dt);
+    else this.speed += (max - this.speed) * Math.min(1, dt * 2.5);
+    // Steering eases in and out instead of snapping.
+    const grip = 0.35 + 0.65 * Math.min(1, this.speed / 12);
+    this.vx += (steer * level.steer * grip - this.vx) * Math.min(1, dt * 7);
     this.x += this.vx * dt;
     this.z -= this.speed * dt;
     for (const w of this.wheels) w.rotation.x -= (this.speed * dt) / 0.42;
     this.sync();
   }
 
+  // A hit slows the car. It never ends the run.
   hit() {
-    this.stun = 0.6;
+    this.stun = 0.7;
+    this.speed *= 0.45;
   }
 
   sync() {

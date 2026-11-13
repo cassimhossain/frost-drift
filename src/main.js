@@ -4,6 +4,7 @@ import { LEVELS } from './levels.js';
 import { Player } from './player.js';
 import { World } from './world.js';
 import { UI, Input } from './ui.js';
+import { Effects } from './effects.js';
 
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -14,6 +15,9 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
 const world = new World(scene);
 const player = new Player(scene);
 const input = new Input();
+const effects = new Effects(scene);
+const camPos = new THREE.Vector3(0, 5.5, 10);
+const camLook = new THREE.Vector3(0, 1, -8);
 const ui = new UI({ onRestart: restart });
 
 let score = 0;
@@ -22,6 +26,9 @@ function restart() {
   score = 0;
   player.reset();
   world.reset();
+  effects.reset();
+  camPos.set(0, 5.5, 10);
+  camLook.set(0, 1, -8);
   ui.setScore(score);
 }
 
@@ -42,14 +49,24 @@ function step(dt) {
   world.update(dt, player);
 
   const r = world.collide(player);
-  if (r.hit) player.hit();
+  if (r.hit) { player.hit(); effects.hit(); }
+  for (const p of r.picked) effects.burst(p, player.speed);
+  effects.update(dt);
   if (r.picked.length) {
     score += r.picked.length * CONFIG.collectible.points;
     ui.setScore(score);
   }
 
-  camera.position.set(player.x, 5.5, player.z + 10);
-  camera.lookAt(player.x, 1, player.z - 8);
+  // Camera follows with a slight delay sideways, pulls back and widens as speed builds.
+  const pace = player.speed / level.maxSpeed;
+  const k = 1 - Math.exp(-dt * 4);
+  camPos.x += (player.x - camPos.x) * k;
+  camPos.y += (5.2 + pace * 0.8 - camPos.y) * k;
+  camPos.z = player.z + 9 + pace * 2.5;
+  camLook.x += (player.x + player.vx * 0.25 - camLook.x) * (1 - Math.exp(-dt * 6));
+  camLook.z = player.z - 8;
+  camera.position.copy(camPos).add(effects.offset);
+  camera.lookAt(camLook);
 }
 
 let last = performance.now();
