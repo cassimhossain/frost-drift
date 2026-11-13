@@ -7,7 +7,7 @@ export class Effects {
     const count = CONFIG.counts.sparks;
     // Colour is pushed past 1 so the bloom pass makes sparks glow.
     const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(CONFIG.colors.accent).multiplyScalar(4), toneMapped: false });
-    this.mesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.14), mat, count);
+    this.mesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.085), mat, count);
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
 

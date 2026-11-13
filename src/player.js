@@ -1,48 +1,77 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 
+const WHEEL_RADIUS = 0.54;
+const WHEELS = ['WheelFrontL', 'WheelFrontR', 'WheelRearL', 'WheelRearR'];
+const HIDDEN = ['License_Plate', 'InteriorSteeringEmblem']; // parts carrying the model author's logos
+
 // The car. Drives toward -z; +x is the right side of the screen.
 export class Player {
-  constructor(scene) {
-    const c = CONFIG.colors;
-    const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, flatShading: true, ...extra });
-    this.group = new THREE.Group();
+  constructor(scene, assets) {
+    this.group = new THREE.Group(); // position and heading
+    this.body = new THREE.Group();  // roll and pitch
+    this.group.add(this.body);
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.8), mat(c.car));
-    body.position.y = 0.7;
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.8), mat(c.carDark));
-    cabin.position.set(0, 1.22, 0.25);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 3.82), mat(c.accent));
-    stripe.position.y = 0.985;
-    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.4), mat(c.accent));
-    spoiler.position.set(0, 1.2, 1.75);
-    this.group.add(body, cabin, stripe, spoiler);
+    const model = assets.car;
+    model.rotation.y = Math.PI; // the model faces +z; the game drives toward -z
+    model.position.y = 0.16;    // rest the tyres on the road
+    this.body.add(model);
+    this.model = model;
+    this.group.updateMatrixWorld(true);
 
-    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 10);
-    wheelGeo.rotateZ(Math.PI / 2);
-    const wheelMat = mat('#15181c');
-    this.wheels = [];
-    for (const [x, z] of [[-1, -1.25], [1, -1.25], [-1, 1.25], [1, 1.25]]) {
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.position.set(x, 0.42, z);
-      this.wheels.push(w);
-      this.group.add(w);
-    }
+    this.lamps = [];
+    const fix = (m) => {
+      if (m.transmission > 0) {
+        // Real glass refraction needs a second render of the whole scene. Tinted glass looks close and costs nothing.
+        m.transmission = 0; m.transparent = true; m.opacity = 0.62; m.color.set('#0b1118');
+        m.roughness = 0.04; m.metalness = 0.9; m.depthWrite = false;
+      }
+      if ((m.name === 'Headlight' || m.name === 'Brakelight') && !this.lamps.includes(m)) this.lamps.push(m);
+    };
+    model.traverse((o) => {
+      if (HIDDEN.includes(o.name)) o.visible = false;
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      fix(o.material);
+      if (o.userData.paints) Object.values(o.userData.paints).forEach(fix);
+    });
 
-    const lampGeo = new THREE.BoxGeometry(0.4, 0.18, 0.06);
-    const headMat = new THREE.MeshBasicMaterial({ color: '#fff4c2' });
-    const tailMat = new THREE.MeshBasicMaterial({ color: '#ff3b30' });
-    for (const x of [-0.65, 0.65]) {
-      const h = new THREE.Mesh(lampGeo, headMat); h.position.set(x, 0.75, -1.92);
-      const t = new THREE.Mesh(lampGeo, tailMat); t.position.set(x, 0.75, 1.92);
-      this.group.add(h, t);
-    }
+    // Put each wheel on a pivot at its hub so it can spin and steer.
+    this.wheels = WHEELS.map((name, i) => {
+      const wheel = model.getObjectByName(name);
+      const pivot = new THREE.Group();
+      pivot.rotation.order = 'YXZ';
+      new THREE.Box3().setFromObject(wheel).getCenter(pivot.position);
+      this.body.add(pivot);
+      pivot.updateMatrixWorld(true);
+      pivot.attach(wheel);
+      return { pivot, front: i < 2 };
+    });
 
-    this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    // Headlights: one spotlight, no shadow, brighter as night falls.
+    this.beam = new THREE.SpotLight(CONFIG.colors.lamp, 0, 120, 0.62, 0.75, 1.35);
+    this.beam.position.set(0, 0.8, -1.6);
+    this.beam.target.position.set(0, -0.6, -30);
+    this.group.add(this.beam, this.beam.target);
+
     scene.add(this.group);
-
     this.radius = 1.1;
+    this.spin = 0;
     this.reset();
+  }
+
+  setPaint(variant) {
+    this.model.traverse((o) => {
+      const m = o.isMesh && o.userData.paints && o.userData.paints[variant];
+      if (m) o.material = m;
+    });
+  }
+
+  // n: 0 = dusk, 1 = night.
+  setNight(n) {
+    this.beam.intensity = 80 + n * 560;
+    for (const m of this.lamps) m.emissiveIntensity = 1.5 + n * 5;
   }
 
   reset() {
@@ -50,8 +79,8 @@ export class Player {
     this.sync();
   }
 
-  // steer: -1 (left) .. 1 (right)
-  update(dt, steer, level, offroad) {
+  // steer: -1 (left) .. 1 (right). centre: road centre at the car. reach: how far from it the car may stray.
+  update(dt, steer, level, offroad, centre, reach) {
     this.stun = Math.max(0, this.stun - dt);
     // Speed builds up gradually; off the road or just after a hit the car can only crawl.
     const max = level.maxSpeed * (offroad ? 0.6 : 1) * (this.stun > 0 ? 0.45 : 1);
@@ -61,8 +90,11 @@ export class Player {
     const grip = 0.35 + 0.65 * Math.min(1, this.speed / 12);
     this.vx += (steer * level.steer * grip - this.vx) * Math.min(1, dt * 7);
     this.x += this.vx * dt;
+    // Deep snow beyond the verge stops the car drifting off into the scenery.
+    const off = this.x - centre;
+    if (Math.abs(off) > reach) { this.x = centre + Math.sign(off) * reach; this.vx *= 0.5; }
     this.z -= this.speed * dt;
-    for (const w of this.wheels) w.rotation.x -= (this.speed * dt) / 0.42;
+    this.spin -= (this.speed * dt) / WHEEL_RADIUS;
     this.sync();
   }
 
@@ -74,7 +106,12 @@ export class Player {
 
   sync() {
     this.group.position.set(this.x, 0, this.z);
-    this.group.rotation.y = -this.vx * 0.022;
-    this.group.rotation.z = -this.vx * 0.006;
+    this.group.rotation.y = -this.vx * 0.016;
+    this.body.rotation.z = this.vx * 0.0035;
+    this.body.rotation.x = -this.stun * 0.045;
+    for (const w of this.wheels) {
+      w.pivot.rotation.x = this.spin;
+      w.pivot.rotation.y = w.front ? -this.vx * 0.022 : 0;
+    }
   }
 }
