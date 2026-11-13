@@ -9,7 +9,7 @@ import { loadAssets } from './assets.js';
 import { Player } from './player.js';
 import { World } from './world.js';
 import { UI, Input, Store } from './ui.js';
-import { Effects } from './effects.js';
+import { Effects, Sound } from './effects.js';
 
 // Computers get the full picture; phones and tablets get a lighter one. ?quality=high|low forces a tier.
 const forced = new URLSearchParams(location.search).get('quality');
@@ -28,7 +28,8 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 600);
 const input = new Input();
 const store = new Store();
-const ui = new UI({ input, onStart: start, onAgain: () => start(mode), onMenu: menu, onCar: pickCar, onView: nextView, onFinish: finish });
+const sound = new Sound();
+const ui = new UI({ input, onStart: start, onAgain: () => start(mode), onMenu: menu, onCar: pickCar, onView: nextView, onFinish: finish, onMute: () => ui.setMute(sound.toggle()) });
 
 let composer = null;
 if (tier.bloom) {
@@ -104,6 +105,7 @@ function menu() {
 function start(nextMode) {
   mode = nextMode;
   state = 'playing';
+  sound.unlock(); // allowed here because starting a run is always a tap or key press
   resetRun();
   ui.showHud(mode);
   ui.setScore(score);
@@ -162,8 +164,9 @@ function play(dt) {
   player.update(dt, drive, level, roadInfo);
 
   const r = world.collide(player);
-  if (r.hit) { player.hit(); effects.hit(); }
+  if (r.hit) { sound.thud(Math.abs(player.speed) / 30); player.hit(); effects.hit(); }
   for (let i = 0; i < r.count; i++) effects.burst(r.picked[i], player.velX, player.velZ);
+  if (r.count) sound.pickup();
   effects.kick(player, dt);
   if (r.count) score += r.count * CONFIG.collectible.points;
 
@@ -213,6 +216,8 @@ function setFov(fov) {
 
 function step(dt) {
   if (state === 'playing') play(dt); else showroom(dt);
+  const slip = Math.abs(player.velX * Math.cos(player.heading) + player.velZ * Math.sin(player.heading));
+  sound.update(state === 'playing', player.speed, TOP_SPEED, drive.throttle, slip);
   effects.update(dt);
   world.update(dt, player, camera);
 }
@@ -232,7 +237,7 @@ requestAnimationFrame(frame);
 
 // Debug handle for the console and for automated checks.
 window.__game = {
-  player, world, input, camera, renderer, scene, tier, effects, store,
+  player, world, input, camera, renderer, scene, tier, effects, store, sound,
   tick(n = 1, dt = 1 / 60, each) { for (let i = 0; i < n; i++) { if (each) each(); step(dt); } draw(); },
   get state() { return state; },
   get score() { return score; },

@@ -20,7 +20,8 @@ These rules must never be broken. If a request conflicts with one, say so and as
 
 - Downloaded assets are allowed only if their licence is CC0 or CC BY. Every one must be listed in `CREDITS.md` with source, author and licence.
 - No logos or trademarks of real companies or car makers in the game.
-- All assets live in `assets/` and are loaded once, before play, by `src/assets.js`. No audio files yet.
+- All assets live in `assets/` and are loaded once, before play, by `src/assets.js`.
+- No audio files. All sound is generated with the Web Audio API (`Sound` in `src/effects.js`), starts only after a tap or key press, and can be muted.
 - Keep the whole `assets/` folder under 40 MB.
 - No build step. Plain ES modules only. No bundler, no npm dependencies at runtime.
 - Three.js and its addons load from a CDN at a pinned version through the import map in `index.html`. Change the version on purpose, never to a floating tag.

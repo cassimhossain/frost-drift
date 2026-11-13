@@ -130,3 +130,119 @@ export class Effects {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+// All sound is generated here with the Web Audio API. There are no audio files.
+// Browsers only allow sound after a tap or key press, so nothing starts until unlock() is called from one.
+export class Sound {
+  constructor() {
+    this.ctx = null;
+    this.muted = false;
+  }
+
+  unlock() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      const ctx = this.ctx = new AC();
+      this.master = ctx.createGain();
+      this.master.gain.value = this.muted ? 0 : 0.5;
+      this.master.connect(ctx.destination);
+
+      // Engine: two slightly detuned saws and a sub, through a filter that opens as the revs rise.
+      this.engineGain = ctx.createGain();
+      this.engineGain.gain.value = 0;
+      this.engineFilter = ctx.createBiquadFilter();
+      this.engineFilter.type = 'lowpass';
+      this.engineFilter.Q.value = 1.2;
+      this.engineFilter.connect(this.engineGain).connect(this.master);
+      this.engine = [['sawtooth', 1, 0.5], ['sawtooth', 1.007, 0.4], ['square', 0.5, 0.35]].map(([type, ratio, level]) => {
+        const osc = ctx.createOscillator(), g = ctx.createGain();
+        osc.type = type;
+        g.gain.value = level;
+        osc.connect(g).connect(this.engineFilter);
+        osc.start();
+        return { osc, ratio };
+      });
+
+      // One second of noise, looped: filtered low for wind and road rumble, high for tyres sliding on snow.
+      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      this.noise = buf;
+      const loop = (type, freq) => {
+        const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+        src.buffer = buf; src.loop = true;
+        f.type = type; f.frequency.value = freq;
+        g.gain.value = 0;
+        src.connect(f).connect(g).connect(this.master);
+        src.start();
+        return g;
+      };
+      this.windGain = loop('lowpass', 420);
+      this.slideGain = loop('bandpass', 2600);
+    } catch (err) {
+      this.ctx = null; // no sound on this device; the game carries on silently
+    }
+  }
+
+  // Returns true when sound is now muted.
+  toggle() {
+    this.muted = !this.muted;
+    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.5, this.ctx.currentTime, 0.03);
+    return this.muted;
+  }
+
+  // Call every frame. speed and slide in m/s, top = the car's top speed, throttle -1..1.
+  update(playing, speed = 0, top = 1, throttle = 0, slide = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, v = Math.abs(speed), pace = Math.min(1, v / top);
+    // Pretend gearbox: revs climb through each of four gears, then drop for the next.
+    const gears = pace * 4, gear = Math.min(3, Math.floor(gears)), revs = gears - gear;
+    const hz = playing ? 46 + gear * 9 + revs * 62 + (speed < -0.5 ? 20 : 0) : 40;
+    for (const e of this.engine) e.osc.frequency.setTargetAtTime(hz * e.ratio, t, 0.05);
+    this.engineFilter.frequency.setTargetAtTime(320 + pace * 900 + Math.max(0, throttle) * 500, t, 0.08);
+    this.engineGain.gain.setTargetAtTime(playing ? 0.1 + Math.max(0, throttle) * 0.07 + pace * 0.05 : 0, t, 0.1);
+    this.windGain.gain.setTargetAtTime(playing ? pace * pace * 0.34 : 0, t, 0.15);
+    this.slideGain.gain.setTargetAtTime(playing ? Math.min(0.22, slide * 0.03) : 0, t, 0.06);
+  }
+
+  // Short bright chime for a pickup.
+  pickup() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [[880, 0], [1318.5, 0.07], [1760, 0.14]].forEach(([hz, at]) => {
+      const osc = this.ctx.createOscillator(), g = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      g.gain.setValueAtTime(0, t + at);
+      g.gain.linearRampToValueAtTime(0.22, t + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.28);
+      osc.connect(g).connect(this.master);
+      osc.start(t + at);
+      osc.stop(t + at + 0.3);
+    });
+  }
+
+  // Dull thud with a crunch for a collision. strength 0..1.
+  thud(strength = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, k = Math.max(0.2, Math.min(1, strength));
+    const osc = this.ctx.createOscillator(), g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+    g.gain.setValueAtTime(0.7 * k, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.32);
+    const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), ng = this.ctx.createGain();
+    src.buffer = this.noise;
+    f.type = 'lowpass';
+    f.frequency.value = 1400;
+    ng.gain.setValueAtTime(0.5 * k, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    src.connect(f).connect(ng).connect(this.master);
+    src.start(t, Math.random() * 0.5, 0.2);
+  }
+}

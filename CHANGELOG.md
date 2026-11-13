@@ -2,6 +2,12 @@
 
 Newest first.
 
+## 0.7.0 - Sound
+
+- Engine note that climbs through four gears, wind and road noise that grow with speed, tyre hiss when sliding.
+- Chime on a pickup, thud on a hit. Mute with the Sound button or the M key.
+- All sound is generated in code; there are no audio files.
+
 ## 0.6.0 - Real driving
 
 - New car handling: the steering wheel eases in and springs back, the car turns its nose into corners, slides a little on snow, leans, squats and dives.

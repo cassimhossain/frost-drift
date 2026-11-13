@@ -119,7 +119,7 @@ export class UI {
     const touch = window.matchMedia('(pointer: coarse)').matches;
     $('hint').textContent = `${touch
       ? 'Hold the left or right side of the screen to steer. Hold Brake to slow down and reverse.'
-      : 'Arrow keys: left and right steer, down brakes and reverses, up is gas. C changes the view.'} Collect ${CONFIG.collectible.plural}, stay off the trees and rocks.`;
+      : 'Arrow keys: left and right steer, down brakes and reverses, up is gas. C changes the view, M mutes.'} Collect ${CONFIG.collectible.plural}, stay off the trees and rocks.`;
     this.touch = touch;
     handlers.input.pedal($('brake'), -1);
 
@@ -141,10 +141,12 @@ export class UI {
     $('menu').addEventListener('click', () => this.h.onMenu());
     $('view').addEventListener('click', () => this.h.onView());
     $('finish').addEventListener('click', () => this.h.onFinish());
+    $('mute').addEventListener('click', () => this.h.onMute());
     $('share').addEventListener('click', () => this.share());
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       if (e.key === 'c' || e.key === 'C') this.h.onView();
+      if (e.key === 'm' || e.key === 'M') this.h.onMute();
       if (e.key === 'Enter') {
         if (!$('start').hidden) this.h.onStart('run');
         else if (!$('end').hidden) this.h.onAgain();
@@ -188,6 +190,7 @@ export class UI {
   setLevel(index, name) { this.set('level', `${index + 1}/3 ${name}`); }
   setSpeed(kmh) { this.set('kmh', String(Math.round(kmh))); }
   setView(name) { this.set('view', 'View: ' + name); }
+  setMute(muted) { $('mute').textContent = muted ? 'Sound: Off' : 'Sound: On'; }
 
   banner(small, big) {
     const el = $('banner');
