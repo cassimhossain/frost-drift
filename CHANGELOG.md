@@ -2,6 +2,15 @@
 
 Newest first.
 
+## 0.4.0 - Levels, modes and screens
+
+- Loading screen with a progress bar; start screen with the name in big letters over the live scene.
+- Two modes: Timed Run (3 levels, 2 minutes, timer) and Free Drive (no timer, loops forest to city and dusk to night).
+- Garage: pick a car on the start screen. Cars and their model files are listed in `src/config.js`.
+- Four camera views (Chase, Low, Bonnet, High), switched with the View button or the C key.
+- In-run display: score, time left, level, speed. Level banner at each change. End screen with Play again and Menu.
+- Car details: brake lights flare when slowing, snow sprays from the rear wheels, a soft shadow sits under the car.
+
 ## 0.3.0 - Realistic world
 
 - Changed direction from low-poly to realistic, desktop-first. `CLAUDE.md` asset and performance rules rewritten to match.

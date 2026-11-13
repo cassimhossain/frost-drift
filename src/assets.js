@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { CONFIG } from './config.js';
 
 // Loads every downloaded asset once, before play starts. Sources and licences are in CREDITS.md.
 const BASE = new URL('../assets/', import.meta.url).href;
@@ -42,22 +43,25 @@ export async function loadAssets(renderer, onProgress = () => {}) {
 
   const gltf = new GLTFLoader();
   const out = { tex };
-  track(gltf.loadAsync(`${BASE}models/car_concept.glb`).then(async (g) => {
-    // The model ships three paint jobs as material variants. Resolve them now so swapping is instant.
-    const pending = [];
-    g.scene.traverse((o) => {
-      const maps = o.isMesh && o.userData.gltfExtensions?.KHR_materials_variants?.mappings;
-      if (!maps) return;
-      o.userData.paints = {};
-      for (const m of maps) {
-        pending.push(g.parser.getDependency('material', m.material).then((mat) => {
-          for (const v of m.variants) o.userData.paints[v] = mat;
-        }));
-      }
-    });
-    await Promise.all(pending);
-    out.car = g.scene;
-  }));
+  out.cars = {};
+  for (const [key, def] of Object.entries(CONFIG.carModels)) {
+    track(gltf.loadAsync(`${BASE}models/${def.file}`).then(async (g) => {
+      // A model may ship several paint finishes as material variants. Resolve them now so swapping is instant.
+      const pending = [];
+      g.scene.traverse((o) => {
+        const maps = o.isMesh && o.userData.gltfExtensions?.KHR_materials_variants?.mappings;
+        if (!maps) return;
+        o.userData.paints = {};
+        for (const m of maps) {
+          pending.push(g.parser.getDependency('material', m.material).then((mat) => {
+            for (const v of m.variants) o.userData.paints[v] = mat;
+          }));
+        }
+      });
+      await Promise.all(pending);
+      out.cars[key] = g.scene;
+    }));
+  }
   track(gltf.loadAsync(`${BASE}models/rock_07.gltf`).then((g) => {
     let geo;
     g.scene.traverse((o) => { if (o.isMesh) geo = o.geometry; });
